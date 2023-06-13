@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import pool from './db';
 import bodyParser from "body-parser";
-import { loginValidation } from "./validation";
+import { loginValidation, signupValidation } from "./validation";
 
 const app = express();
 const router = express.Router();
@@ -49,7 +49,22 @@ try {
 }
 });
 
-app.get("/get_login",loginValidation,async (req,res,next)=>{
+app.post("/post_joueur", async (req, res) => {
+try {
+    console.log(req.body);
+    const data = req.body;
+    console.log(data);
+    res.status(200).send("Data received successfully!");
+} catch (err) {
+    console.log("Error:");
+    res.status(400).send("Error receiving data.");
+}
+});
+
+app.listen(5000, () => console.log("Serveur démarré"));
+
+
+router.post("/login",loginValidation,async (req,res,next)=>{
     try {
         const client = await pool.connect();
         pool.query('SELECT * FROM user WHERE email='+pool.escape(req.body.email)+';'),
@@ -92,55 +107,61 @@ app.get("/get_login",loginValidation,async (req,res,next)=>{
     }
 })
 
-app.post("/post_joueur", async (req, res) => {
-try {
-    console.log(req.body);
-    const data = req.body;
-    console.log(data);
-    res.status(200).send("Data received successfully!");
-} catch (err) {
-    console.log("Error:");
-    res.status(400).send("Error receiving data.");
-}
-});
 
-app.listen(5000, () => console.log("Serveur démarré"));
 
-app.use(session({
-    secret:'leSecret',
-    resave: false,
-    saveUninitialized:false
-}));
-
-app.use(passport.initialize());
-app.use(passport.session());
-
-passport.use(new LocalStrategy(
-    (username,password,done)=>{
-        if(username === ''&& password ===''){
-            return done(null,{id:1, username:'john'});
-        } else{
-            return done(null,false);
-        }
+router.post('/get-user', signupValidation, (req, res, next) => {
+    if(
+        !req.headers.authorization ||
+        !req.headers.authorization.startsWith('Bearer') ||
+        !req.headers.authorization.split(' ')[1]
+    ){
+        return res.status(422).json({
+        message: "Please provide the token",
+        });
     }
-))
-
-
-
-passport.serializeUser((user,done)=>{
-    done(null,user.id);
+    const theToken = req.headers.authorization.split(' ')[1];
+    const decoded = jwt.verify(theToken, 'the-super-strong-secrect');
+        pool.query('SELECT * FROM users where id=?', decoded.id, function (error, results, fields) {
+        if (error) throw error;
+        return res.send({ error: false, data: results[0], message: 'Fetch Successfully.' });
+    });
 });
+module.exports=router;
 
-passport.deserializeUser((id,done)=>{
-    /*User.findById(id, (err, user) => {
-        done(err, user);
-      });*/
-      const user={id:1, username:"john"};
-});
-
-
-
-
+router.post('/register', signupValidation, (req, res, next) => {
+    pool.query(`SELECT * FROM users WHERE LOWER(email) = LOWER(
+        ${pool.escape(req.body.email)});`,
+    (err, result) => {
+        if (result.length) {
+            return res.status(409).send({
+            msg: 'This user is already in use!'});
+    } else {
+    // Le nom est utilisable
+        bcrypt.hash(req.body.password, 10, (err, hash) => {
+            if (err) {
+                return res.status(500).send({
+                msg: err 
+            });
+        } else {
+        // has hashed pw => add to database
+        pool.query(
+            `INSERT INTO users (name, email, password) VALUES ('${req.body.name}',
+            ${pool.escape(req.body.email
+            )}, ${pool.escape(hash)})`,
+            (err, result) => {
+                if (err) {
+                throw err;
+                return res.status(400).send({
+                msg: err
+            });
+        }
+        return res.status(201).send({
+        msg: 'The user has been registerd with us!'
+    });
+    });
+    }});
+    }});
+    });
 
 // app.use("/test_static", express.static("public"));
 
